@@ -1,3 +1,5 @@
 node_modules/
 .env
 dist/
+socket-test/
+src/socket-test.ts
