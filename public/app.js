@@ -21,6 +21,38 @@ const connectionLabelElement = document.getElementById("connection-label");
 const backButton = document.getElementById("back-button");
 
 let statusTimer = null;
+let conversationsTimer = null;
+let lastConversationsSignature = null;
+
+const CONVERSATION_REFRESH_MS = 4000;
+
+function startConversationRefresh() {
+    stopConversationRefresh();
+
+    conversationsTimer = setInterval(() => {
+        if (state.token && !document.hidden) {
+            loadConversations(true);
+        }
+    }, CONVERSATION_REFRESH_MS);
+}
+
+function stopConversationRefresh() {
+    clearInterval(conversationsTimer);
+    conversationsTimer = null;
+    lastConversationsSignature = null;
+}
+
+document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && state.token) {
+        loadConversations(true);
+    }
+});
+
+window.addEventListener("focus", () => {
+    if (state.token) {
+        loadConversations(true);
+    }
+});
 
 /* ---------- UI helpers ---------- */
 
@@ -173,6 +205,8 @@ function clearSession() {
     localStorage.removeItem("chat_token");
     localStorage.removeItem("chat_user");
 
+    stopConversationRefresh();
+
     if (state.socket) {
         state.socket.disconnect();
         state.socket = null;
@@ -196,6 +230,7 @@ function showLoggedIn() {
     updateChatView();
     connectSocket();
     loadConversations();
+    startConversationRefresh();
 }
 
 /* ---------- Socket ---------- */
@@ -216,6 +251,7 @@ function connectSocket() {
     state.socket.on("connect", () => {
         setConnectionState("connected");
         showStatus("Connected to real-time chat.", "success");
+        loadConversations(true);
     });
 
     state.socket.on("disconnect", () => {
@@ -333,13 +369,31 @@ function renderConversations(conversations) {
 
 /* ---------- Data loading ---------- */
 
-async function loadConversations() {
+async function loadConversations(quiet = false) {
     try {
         const data = await apiRequest("/api/conversations");
 
+        // A background refresh may finish after the user logged out.
+        if (!state.token) {
+            return;
+        }
+
+        const signature = JSON.stringify([
+            data.conversations.map((conversation) => conversation.id),
+            state.activeConversationId,
+        ]);
+
+        // Skip re-rendering when nothing changed, so the list doesn't flicker.
+        if (quiet && signature === lastConversationsSignature) {
+            return;
+        }
+
+        lastConversationsSignature = signature;
         renderConversations(data.conversations);
     } catch (error) {
-        showStatus(error.message, "error");
+        if (!quiet) {
+            showStatus(error.message, "error");
+        }
     }
 }
 
