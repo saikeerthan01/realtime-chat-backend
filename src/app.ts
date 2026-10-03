@@ -11,6 +11,7 @@ const app = express();
 
 console.log("CHAT APP VERSION 2 - AUTH ROUTES LOADED");
 app.use(express.json());
+app.use(express.static("public"));
 app.get("/api/test", (req, res) => {
     res.json({ message: "Main app is working" });
 });

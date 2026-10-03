@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ChatApp</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f4f7fb;
+            color: #172033;
+        }
+        main {
+            width: min(950px, 94%);
+            margin: 32px auto;
+        }
+        h1 { margin-bottom: 6px; }
+        .subtitle, #status { color: #5b6475; }
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+            box-shadow: 0 4px 18px rgba(18, 38, 63, 0.08);
+        }
+        .auth-grid, .chat-grid {
+            display: grid;
+            gap: 20px;
+        }
+        .auth-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+        .chat-grid { grid-template-columns: 260px 1fr; }
+        input, button {
+            width: 100%;
+            padding: 11px;
+            margin-top: 10px;
+            border-radius: 7px;
+            font-size: 14px;
+        }
+        input { border: 1px solid #cbd5e1; }
+        button {
+            border: 0;
+            background: #2563eb;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        button:hover { background: #1d4ed8; }
+        .secondary { background: #64748b; }
+        .secondary:hover { background: #475569; }
+        .hidden { display: none; }
+        #conversations button {
+            text-align: left;
+            margin-top: 8px;
+            background: #e8eefb;
+            color: #172033;
+        }
+        #conversations button.active { background: #2563eb; color: white; }
+        #messages {
+            height: 360px;
+            overflow-y: auto;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 12px;
+            background: #fbfdff;
+        }
+        .message {
+            padding: 9px 11px;
+            margin: 8px 0;
+            border-radius: 8px;
+            background: #e8eefb;
+        }
+        .message.mine { background: #dbeafe; }
+        .message small { display: block; margin-top: 4px; color: #64748b; }
+        .top-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+        .top-row button { width: auto; margin: 0; }
+        @media (max-width: 700px) {
+            .chat-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>ChatApp</h1>
+        <p class="subtitle">A simple real-time chat app built with Socket.IO.</p>
+        <p id="status">Create an account or log in to start chatting.</p>
+
+        <section id="auth-panel">
+            <form id="login-form" class="card">
+                <h2>Log in</h2>
+                <input id="login-email" type="email" placeholder="Email" required />
+                <input id="login-password" type="password" placeholder="Password" required />
+                <button type="submit">Log in</button>
+                <button type="button" id="show-register" class="secondary">
+                    Create a new account
+                </button>
+            </form>
+
+            <form id="register-form" class="card hidden">
+                <h2>Create account</h2>
+                <input id="register-username" placeholder="Username" required />
+                <input id="register-email" type="email" placeholder="Email" required />
+                <input id="register-password" type="password" placeholder="Password (6+ characters)" required />
+                <button type="submit">Create account</button>
+                <button type="button" id="show-login" class="secondary">
+                    Back to log in
+                </button>
+            </form>
+        </section>
+
+        <section id="chat-panel" class="hidden">
+            <div class="card top-row">
+                <strong id="current-user"></strong>
+                <button id="logout-button" class="secondary">Log out</button>
+            </div>
+
+            <div class="chat-grid">
+                <aside class="card">
+                    <h2>Conversations</h2>
+                    <form id="conversation-form">
+                        <input id="other-user-id" type="number" min="1" placeholder="Other user's ID" required />
+                        <button type="submit">Start conversation</button>
+                    </form>
+                    <div id="conversations"></div>
+                </aside>
+
+                <section class="card">
+                    <h2 id="chat-title">Choose a conversation</h2>
+                    <div id="messages"></div>
+                    <form id="message-form" class="hidden">
+                        <input id="message-content" placeholder="Write a message" required />
+                        <button type="submit">Send</button>
+                    </form>
+                </section>
+            </div>
+        </section>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="./app.js"></script>
+</body>
+</html>
