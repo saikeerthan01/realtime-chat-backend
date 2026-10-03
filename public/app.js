@@ -9,14 +9,127 @@ const statusElement = document.getElementById("status");
 const authPanel = document.getElementById("auth-panel");
 const chatPanel = document.getElementById("chat-panel");
 const currentUserElement = document.getElementById("current-user");
+const currentAvatarElement = document.getElementById("current-avatar");
 const conversationsElement = document.getElementById("conversations");
 const messagesElement = document.getElementById("messages");
 const chatTitleElement = document.getElementById("chat-title");
+const chatSubtitleElement = document.getElementById("chat-subtitle");
+const chatEmptyElement = document.getElementById("chat-empty");
 const messageForm = document.getElementById("message-form");
+const connectionElement = document.getElementById("connection-status");
+const connectionLabelElement = document.getElementById("connection-label");
+const backButton = document.getElementById("back-button");
 
-function showStatus(message) {
+let statusTimer = null;
+
+/* ---------- UI helpers ---------- */
+
+function showStatus(message, type = "info") {
     statusElement.textContent = message;
+    statusElement.className = `visible ${type}`;
+
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => {
+        statusElement.classList.remove("visible");
+    }, type === "error" ? 7000 : 4500);
 }
+
+function setConnectionState(connectionState) {
+    const labels = {
+        connecting: "Connecting",
+        connected: "Connected",
+        offline: "Offline",
+    };
+
+    connectionElement.dataset.state = connectionState;
+    connectionLabelElement.textContent = labels[connectionState];
+}
+
+function updateChatView() {
+    const hasActive = state.activeConversationId !== null;
+
+    chatEmptyElement.classList.toggle("hidden", hasActive);
+    messagesElement.classList.toggle("hidden", !hasActive);
+    messageForm.classList.toggle("hidden", !hasActive);
+    chatPanel.classList.toggle("chat-open", hasActive);
+
+    if (!hasActive) {
+        chatTitleElement.textContent = "Choose a conversation";
+        chatSubtitleElement.textContent = "Private chat by ID";
+    }
+}
+
+async function copyText(text) {
+    try {
+        await navigator.clipboard.writeText(text);
+        return true;
+    } catch (error) {
+        const helper = document.createElement("textarea");
+        helper.value = text;
+        helper.setAttribute("readonly", "");
+        helper.style.position = "fixed";
+        helper.style.opacity = "0";
+        document.body.append(helper);
+        helper.select();
+
+        let copied = false;
+        try {
+            copied = document.execCommand("copy");
+        } catch (copyError) {
+            copied = false;
+        }
+
+        helper.remove();
+        return copied;
+    }
+}
+
+function renderCurrentUser() {
+    currentUserElement.replaceChildren();
+
+    const name = document.createElement("span");
+    name.className = "profile-name";
+    name.textContent = state.user.username;
+
+    const row = document.createElement("span");
+    row.className = "chat-id-row";
+
+    const label = document.createElement("span");
+    label.className = "chat-id-label";
+    label.append("Your Chat ID: ");
+
+    const idValue = document.createElement("b");
+    idValue.textContent = state.user.id;
+    label.append(idValue);
+
+    const copyButton = document.createElement("button");
+    copyButton.type = "button";
+    copyButton.className = "copy-btn";
+    copyButton.title = "Copy your Chat ID";
+    copyButton.setAttribute("aria-label", "Copy your Chat ID");
+    copyButton.innerHTML =
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+        'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<rect x="9" y="9" width="11" height="11" rx="2"/>' +
+        '<path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>';
+
+    copyButton.addEventListener("click", async () => {
+        const copied = await copyText(String(state.user.id));
+
+        if (copied) {
+            showStatus("Your Chat ID was copied.", "success");
+        } else {
+            showStatus("Could not copy. Your Chat ID is " + state.user.id + ".", "error");
+        }
+    });
+
+    row.append(label, copyButton);
+    currentUserElement.append(name, row);
+
+    currentAvatarElement.textContent = String(state.user.username || "?").charAt(0);
+}
+
+/* ---------- API ---------- */
 
 async function apiRequest(path, options = {}) {
     const headers = {
@@ -41,6 +154,8 @@ async function apiRequest(path, options = {}) {
 
     return data;
 }
+
+/* ---------- Session ---------- */
 
 function saveSession(token, user) {
     state.token = token;
@@ -67,26 +182,30 @@ function clearSession() {
 function showLoggedOut() {
     authPanel.classList.remove("hidden");
     chatPanel.classList.add("hidden");
-    currentUserElement.textContent = "";
+    currentUserElement.replaceChildren();
     conversationsElement.replaceChildren();
     messagesElement.replaceChildren();
-    messageForm.classList.add("hidden");
+    updateChatView();
 }
 
 function showLoggedIn() {
     authPanel.classList.add("hidden");
     chatPanel.classList.remove("hidden");
-    currentUserElement.textContent =
-        `Logged in as ${state.user.username} (ID: ${state.user.id})`;
 
+    renderCurrentUser();
+    updateChatView();
     connectSocket();
     loadConversations();
 }
+
+/* ---------- Socket ---------- */
 
 function connectSocket() {
     if (state.socket) {
         state.socket.disconnect();
     }
+
+    setConnectionState("connecting");
 
     state.socket = io({
         auth: {
@@ -95,19 +214,25 @@ function connectSocket() {
     });
 
     state.socket.on("connect", () => {
-        showStatus("Connected to real-time chat.");
+        setConnectionState("connected");
+        showStatus("Connected to real-time chat.", "success");
+    });
+
+    state.socket.on("disconnect", () => {
+        setConnectionState("offline");
     });
 
     state.socket.on("connect_error", (error) => {
-        showStatus(`Socket connection error: ${error.message}`);
+        setConnectionState("offline");
+        showStatus(`Socket connection error: ${error.message}`, "error");
     });
 
     state.socket.on("room_error", (error) => {
-        showStatus(error.message);
+        showStatus(error.message, "error");
     });
 
     state.socket.on("message_error", (error) => {
-        showStatus(error.message);
+        showStatus(error.message, "error");
     });
 
     state.socket.on("receive_message", (message) => {
@@ -117,11 +242,21 @@ function connectSocket() {
     });
 }
 
+/* ---------- Rendering ---------- */
+
 function renderMessage(message) {
+    const placeholder = messagesElement.querySelector(".thread-empty");
+
+    if (placeholder) {
+        placeholder.remove();
+    }
+
+    const isMine = Number(message.sender_id) === state.user.id;
+
     const item = document.createElement("div");
     item.className = "message";
 
-    if (Number(message.sender_id) === state.user.id) {
+    if (isMine) {
         item.classList.add("mine");
     }
 
@@ -130,10 +265,15 @@ function renderMessage(message) {
 
     const details = document.createElement("small");
     const sentAt = message.created_at
-        ? new Date(message.created_at).toLocaleString()
+        ? new Date(message.created_at).toLocaleString([], {
+              dateStyle: "short",
+              timeStyle: "short",
+          })
         : "Just now";
 
-    details.textContent = `User ${message.sender_id} · ${sentAt}`;
+    details.textContent = isMine
+        ? `You · ${sentAt}`
+        : `User ${message.sender_id} · ${sentAt}`;
 
     item.append(content, details);
     messagesElement.append(item);
@@ -143,13 +283,44 @@ function renderMessage(message) {
 function renderConversations(conversations) {
     conversationsElement.replaceChildren();
 
+    if (!conversations.length) {
+        const empty = document.createElement("div");
+        empty.className = "list-empty";
+
+        const title = document.createElement("strong");
+        title.textContent = "No conversations yet";
+
+        empty.append(title, "Start a private chat with someone's Chat ID.");
+        conversationsElement.append(empty);
+        return;
+    }
+
     conversations.forEach((conversation) => {
         const button = document.createElement("button");
+        button.type = "button";
+        button.className = "convo";
 
-        button.textContent = `Conversation ${conversation.id}`;
+        const avatar = document.createElement("span");
+        avatar.className = "avatar soft";
+        avatar.setAttribute("aria-hidden", "true");
+        avatar.textContent = "#";
+
+        const text = document.createElement("span");
+
+        const title = document.createElement("span");
+        title.className = "convo-title";
+        title.textContent = `Conversation ${conversation.id}`;
+
+        const sub = document.createElement("span");
+        sub.className = "convo-sub";
+        sub.textContent = "Private chat";
+
+        text.append(title, sub);
+        button.append(avatar, text);
 
         if (conversation.id === state.activeConversationId) {
             button.classList.add("active");
+            button.setAttribute("aria-current", "true");
         }
 
         button.addEventListener("click", () => {
@@ -160,13 +331,15 @@ function renderConversations(conversations) {
     });
 }
 
+/* ---------- Data loading ---------- */
+
 async function loadConversations() {
     try {
         const data = await apiRequest("/api/conversations");
 
         renderConversations(data.conversations);
     } catch (error) {
-        showStatus(error.message);
+        showStatus(error.message, "error");
     }
 }
 
@@ -178,10 +351,19 @@ async function openConversation(conversationId) {
 
         state.activeConversationId = Number(conversationId);
         chatTitleElement.textContent = `Conversation ${conversationId}`;
+        chatSubtitleElement.textContent = "Private chat by ID";
         messagesElement.replaceChildren();
 
+        updateChatView();
+
+        if (!data.messages.length) {
+            const empty = document.createElement("p");
+            empty.className = "thread-empty";
+            empty.textContent = "No messages yet. Say hello!";
+            messagesElement.append(empty);
+        }
+
         data.messages.forEach(renderMessage);
-        messageForm.classList.remove("hidden");
 
         renderConversations(
             (await apiRequest("/api/conversations")).conversations
@@ -189,11 +371,15 @@ async function openConversation(conversationId) {
 
         state.socket.emit("join_conversation", state.activeConversationId);
 
-        showStatus(`Joined conversation ${conversationId}.`);
+        showStatus(`Joined conversation ${conversationId}.`, "success");
+
+        document.getElementById("message-content").focus({ preventScroll: true });
     } catch (error) {
-        showStatus(error.message);
+        showStatus(error.message, "error");
     }
 }
+
+/* ---------- Events ---------- */
 
 document
     .getElementById("register-form")
@@ -211,12 +397,16 @@ document
             });
 
             showStatus(
-                `Account created. Your user ID is ${user.user.id}. You can now log in.`
+                `Account created. Your Chat ID is ${user.user.id}. You can now log in.`,
+                "success"
             );
 
             event.target.reset();
+
+            document.getElementById("register-form").classList.add("hidden");
+            document.getElementById("login-form").classList.remove("hidden");
         } catch (error) {
-            showStatus(error.message);
+            showStatus(error.message, "error");
         }
     });
 
@@ -237,9 +427,9 @@ document
             saveSession(result.token, result.user);
             event.target.reset();
             showLoggedIn();
-            showStatus("Logged in successfully.");
+            showStatus("Logged in successfully.", "success");
         } catch (error) {
-            showStatus(error.message);
+            showStatus(error.message, "error");
         }
     });
 
@@ -264,9 +454,9 @@ document
             await loadConversations();
             await openConversation(result.conversation.id);
 
-            showStatus("Conversation created.");
+            showStatus("Conversation created.", "success");
         } catch (error) {
-            showStatus(error.message);
+            showStatus(error.message, "error");
         }
     });
 
@@ -286,6 +476,13 @@ messageForm.addEventListener("submit", (event) => {
     });
 
     contentElement.value = "";
+});
+
+backButton.addEventListener("click", () => {
+    state.activeConversationId = null;
+    messagesElement.replaceChildren();
+    updateChatView();
+    loadConversations();
 });
 
 document.getElementById("logout-button").addEventListener("click", () => {

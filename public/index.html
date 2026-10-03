@@ -3,139 +3,713 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ChatApp</title>
+    <meta name="theme-color" content="#0b1020" />
+    <title>IDChat · Private chat by ID</title>
     <style>
+        :root {
+            --bg: #0b1020;
+            --bg-2: #0f1630;
+            --surface: #141c36;
+            --surface-2: #1b2547;
+            --surface-3: #232f58;
+            --line: rgba(148, 163, 255, 0.16);
+            --text: #e9edf9;
+            --muted: #9aa5c2;
+            --accent: #6d5cf6;
+            --accent-2: #3b82f6;
+            --accent-grad: linear-gradient(135deg, #5b4ee8 0%, #3b72f0 100%);
+            --ok: #4ade9b;
+            --warn: #fbbf24;
+            --danger: #ff7b8a;
+            --radius: 16px;
+            --shadow: 0 10px 40px rgba(2, 6, 23, 0.45);
+        }
+
         * { box-sizing: border-box; }
+
+        html, body { height: 100%; }
+
         body {
             margin: 0;
-            font-family: Arial, sans-serif;
-            background: #f4f7fb;
-            color: #172033;
+            font-family: Inter, "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+            font-size: 15px;
+            line-height: 1.45;
+            color: var(--text);
+            background:
+                radial-gradient(900px 500px at 10% -10%, rgba(109, 92, 246, 0.22), transparent 60%),
+                radial-gradient(800px 500px at 100% 110%, rgba(59, 130, 246, 0.16), transparent 60%),
+                var(--bg);
+            background-attachment: fixed;
+            -webkit-font-smoothing: antialiased;
         }
-        main {
-            width: min(950px, 94%);
-            margin: 32px auto;
+
+        h1, h2, h3, p { margin: 0; }
+
+        button, input { font: inherit; color: inherit; }
+
+        .hidden { display: none !important; }
+
+        .sr-only {
+            position: absolute;
+            width: 1px; height: 1px;
+            overflow: hidden;
+            clip: rect(0 0 0 0);
+            white-space: nowrap;
         }
-        h1 { margin-bottom: 6px; }
-        .subtitle, #status { color: #5b6475; }
-        .card {
-            background: white;
-            border-radius: 12px;
-            padding: 20px;
-            margin-top: 20px;
-            box-shadow: 0 4px 18px rgba(18, 38, 63, 0.08);
+
+        :focus-visible {
+            outline: 2px solid #9d8cff;
+            outline-offset: 2px;
         }
-        .auth-grid, .chat-grid {
-            display: grid;
-            gap: 20px;
-        }
-        .auth-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
-        .chat-grid { grid-template-columns: 260px 1fr; }
-        input, button {
-            width: 100%;
-            padding: 11px;
-            margin-top: 10px;
-            border-radius: 7px;
-            font-size: 14px;
-        }
-        input { border: 1px solid #cbd5e1; }
-        button {
+
+        /* ---------- Buttons & inputs ---------- */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-height: 44px;
+            padding: 0 18px;
             border: 0;
-            background: #2563eb;
-            color: white;
-            font-weight: bold;
+            border-radius: 12px;
+            background: var(--accent-grad);
+            color: #fff;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.15s ease, filter 0.15s ease, background 0.15s ease;
+        }
+        .btn:hover { filter: brightness(1.1); }
+        .btn:active { transform: translateY(1px); }
+
+        .btn-ghost {
+            background: transparent;
+            border: 1px solid var(--line);
+            color: var(--text);
+        }
+        .btn-ghost:hover { background: var(--surface-2); filter: none; }
+
+        .btn-link {
+            background: none;
+            border: 0;
+            padding: 6px 4px;
+            min-height: 0;
+            color: #a99dff;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: underline;
+            text-underline-offset: 3px;
+        }
+        .btn-link:hover { color: #c7bfff; }
+
+        .icon-btn {
+            display: inline-grid;
+            place-items: center;
+            width: 40px; height: 40px;
+            border: 1px solid transparent;
+            border-radius: 10px;
+            background: transparent;
+            color: var(--muted);
+            cursor: pointer;
+            transition: background 0.15s ease, color 0.15s ease;
+        }
+        .icon-btn:hover { background: var(--surface-2); color: var(--text); }
+        .icon-btn svg { width: 20px; height: 20px; }
+
+        .field { display: block; margin-top: 14px; }
+        .field > span {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #c3cbe2;
+        }
+        .field input {
+            width: 100%;
+            min-height: 46px;
+            padding: 0 14px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: var(--bg-2);
+            font-size: 16px; /* prevents iOS zoom */
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        .field input::placeholder { color: #6d7899; }
+        .field input:focus {
+            outline: none;
+            border-color: #8b7dff;
+            box-shadow: 0 0 0 3px rgba(139, 125, 255, 0.28);
+        }
+
+        .help { margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+
+        /* ---------- Brand ---------- */
+        .brand { display: flex; align-items: center; gap: 12px; }
+        .logo {
+            display: grid;
+            place-items: center;
+            width: 42px; height: 42px;
+            flex: none;
+            border-radius: 13px;
+            background: var(--accent-grad);
+            box-shadow: 0 6px 20px rgba(91, 78, 232, 0.45);
+            font-weight: 800;
+            font-size: 20px;
+            color: #fff;
+        }
+        .brand-name { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; }
+        .brand-name b { color: #a99dff; }
+
+        /* ---------- Status toast ---------- */
+        #status {
+            position: fixed;
+            left: 50%;
+            bottom: 24px;
+            z-index: 50;
+            max-width: min(520px, 92vw);
+            padding: 11px 16px;
+            border-radius: 12px;
+            border: 1px solid var(--line);
+            background: var(--surface-3);
+            box-shadow: var(--shadow);
+            font-size: 14px;
+            opacity: 0;
+            pointer-events: none;
+            transform: translate(-50%, 12px);
+            transition: opacity 0.25s ease, transform 0.25s ease;
+        }
+        #status.visible { opacity: 1; transform: translate(-50%, 0); }
+        #status.success { border-color: rgba(74, 222, 155, 0.5); color: #b9f5d6; }
+        #status.error { border-color: rgba(255, 123, 138, 0.55); color: #ffd0d6; }
+
+        /* ---------- Auth ---------- */
+        #auth-panel {
+            min-height: 100dvh;
+            display: grid;
+            place-items: center;
+            padding: 28px 16px;
+        }
+        .auth-shell { width: min(440px, 100%); }
+        .auth-hero { text-align: center; margin-bottom: 22px; }
+        .auth-hero .brand { justify-content: center; margin-bottom: 16px; }
+        .auth-hero h1 {
+            font-size: 26px;
+            letter-spacing: -0.02em;
+            line-height: 1.2;
+        }
+        .auth-hero p { margin-top: 8px; color: var(--muted); }
+
+        .auth-card {
+            padding: 26px;
+            border: 1px solid var(--line);
+            border-radius: 20px;
+            background: linear-gradient(180deg, var(--surface) 0%, var(--bg-2) 100%);
+            box-shadow: var(--shadow);
+            animation: fadeUp 0.35s ease both;
+        }
+        .auth-card h2 { font-size: 20px; letter-spacing: -0.01em; }
+        .auth-card .lead { margin-top: 4px; color: var(--muted); font-size: 14px; }
+        .auth-card .btn { width: 100%; margin-top: 18px; }
+        .auth-switch { margin-top: 14px; text-align: center; color: var(--muted); font-size: 14px; }
+
+        .trust-row {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 18px;
+        }
+        .chip {
+            padding: 6px 11px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: rgba(20, 28, 54, 0.7);
+            font-size: 12.5px;
+            color: var(--muted);
+        }
+
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ---------- Chat shell ---------- */
+        #chat-panel {
+            height: 100dvh;
+            max-width: 1280px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 340px minmax(0, 1fr);
+            padding: 20px;
+            gap: 0;
+        }
+        .app-frame {
+            display: contents;
+        }
+
+        .sidebar, .chat-main {
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            background: var(--surface);
+            border: 1px solid var(--line);
+        }
+        .sidebar {
+            border-radius: 20px 0 0 20px;
+            border-right: 0;
+            background: linear-gradient(180deg, var(--surface) 0%, var(--bg-2) 100%);
+        }
+        .chat-main {
+            border-radius: 0 20px 20px 0;
+            background: #0e1530;
+            box-shadow: var(--shadow);
+        }
+
+        .side-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 18px 18px 6px;
+        }
+
+        .conn {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 5px 10px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            font-size: 12px;
+            color: var(--muted);
+            white-space: nowrap;
+        }
+        .conn i {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--warn);
+        }
+        .conn[data-state="connected"] i { background: var(--ok); box-shadow: 0 0 0 3px rgba(74, 222, 155, 0.2); }
+        .conn[data-state="connecting"] i { background: var(--warn); animation: pulse 1.2s ease-in-out infinite; }
+        .conn[data-state="offline"] i { background: var(--danger); }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .profile {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin: 12px 18px 0;
+            padding: 14px;
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            background: var(--surface-2);
+        }
+        .avatar {
+            display: grid;
+            place-items: center;
+            width: 44px; height: 44px;
+            flex: none;
+            border-radius: 50%;
+            background: var(--accent-grad);
+            font-weight: 700;
+            color: #fff;
+            text-transform: uppercase;
+        }
+        .avatar.soft { background: var(--surface-3); color: #b9b0ff; }
+        .profile-text { min-width: 0; flex: 1; }
+        #current-user { display: block; min-width: 0; }
+        .profile-name {
+            display: block;
+            font-weight: 700;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .chat-id-row { display: flex; align-items: center; gap: 4px; margin-top: 2px; }
+        .chat-id-label { font-size: 13px; color: var(--muted); }
+        .chat-id-label b { color: #c9c2ff; font-variant-numeric: tabular-nums; }
+        .copy-btn {
+            display: inline-grid;
+            place-items: center;
+            width: 28px; height: 28px;
+            border: 0;
+            border-radius: 8px;
+            background: transparent;
+            color: var(--muted);
             cursor: pointer;
         }
-        button:hover { background: #1d4ed8; }
-        .secondary { background: #64748b; }
-        .secondary:hover { background: #475569; }
-        .hidden { display: none; }
-        #conversations button {
-            text-align: left;
-            margin-top: 8px;
-            background: #e8eefb;
-            color: #172033;
+        .copy-btn:hover { background: var(--surface-3); color: var(--text); }
+        .copy-btn svg { width: 15px; height: 15px; }
+
+        .new-chat { padding: 16px 18px 4px; }
+        .new-chat h2, .list-title {
+            font-size: 12px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--muted);
+            font-weight: 700;
         }
-        #conversations button.active { background: #2563eb; color: white; }
-        #messages {
-            height: 360px;
+        .new-chat .field { margin-top: 10px; }
+        .new-chat .field > span { font-size: 14px; color: var(--text); }
+        .new-chat .btn { width: 100%; margin-top: 10px; }
+
+        .list-title { padding: 16px 18px 6px; }
+
+        #conversations {
+            flex: 1;
+            min-height: 0;
             overflow-y: auto;
-            border: 1px solid #e2e8f0;
-            border-radius: 8px;
-            padding: 12px;
-            background: #fbfdff;
+            padding: 0 10px 12px;
+        }
+        .convo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            min-height: 60px;
+            margin-top: 4px;
+            padding: 8px 10px;
+            border: 1px solid transparent;
+            border-radius: 14px;
+            background: transparent;
+            text-align: left;
+            cursor: pointer;
+            transition: background 0.15s ease, border-color 0.15s ease;
+        }
+        .convo:hover { background: var(--surface-2); }
+        .convo.active {
+            background: rgba(109, 92, 246, 0.2);
+            border-color: rgba(139, 125, 255, 0.45);
+        }
+        .convo-title { display: block; font-weight: 600; }
+        .convo-sub { display: block; font-size: 12.5px; color: var(--muted); }
+
+        .list-empty {
+            margin: 6px 8px;
+            padding: 22px 16px;
+            border: 1px dashed var(--line);
+            border-radius: 14px;
+            text-align: center;
+            color: var(--muted);
+            font-size: 14px;
+        }
+        .list-empty strong { display: block; margin-bottom: 4px; color: var(--text); }
+
+        .side-foot { padding: 12px 18px 16px; border-top: 1px solid var(--line); }
+        .side-foot .btn { width: 100%; min-height: 40px; }
+
+        /* ---------- Chat main ---------- */
+        .chat-head {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-height: 72px;
+            padding: 12px 18px;
+            border-bottom: 1px solid var(--line);
+            background: rgba(20, 28, 54, 0.6);
+            border-radius: 0 20px 0 0;
+        }
+        #back-button { display: none; }
+        .chat-head-text { min-width: 0; }
+        #chat-title {
+            font-size: 17px;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .chat-sub { font-size: 12.5px; color: var(--muted); }
+
+        #chat-empty {
+            flex: 1;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            text-align: center;
+        }
+        .empty-card { max-width: 340px; }
+        .empty-icon {
+            display: grid;
+            place-items: center;
+            width: 72px; height: 72px;
+            margin: 0 auto 16px;
+            border-radius: 24px;
+            background: rgba(109, 92, 246, 0.16);
+            border: 1px solid rgba(139, 125, 255, 0.35);
+            color: #b9b0ff;
+        }
+        .empty-icon svg { width: 34px; height: 34px; }
+        .empty-card h3 { font-size: 19px; }
+        .empty-card p { margin-top: 8px; color: var(--muted); }
+
+        #messages {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            padding: 20px 18px;
+            scroll-behavior: smooth;
         }
         .message {
-            padding: 9px 11px;
-            margin: 8px 0;
-            border-radius: 8px;
-            background: #e8eefb;
+            max-width: min(72%, 520px);
+            padding: 9px 13px 7px;
+            border-radius: 18px 18px 18px 6px;
+            background: var(--surface-2);
+            border: 1px solid var(--line);
+            align-self: flex-start;
+            box-shadow: 0 2px 10px rgba(2, 6, 23, 0.25);
+            animation: pop 0.18s ease both;
+            overflow-wrap: anywhere;
+            white-space: pre-wrap;
         }
-        .message.mine { background: #dbeafe; }
-        .message small { display: block; margin-top: 4px; color: #64748b; }
-        .top-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
-        .top-row button { width: auto; margin: 0; }
-        @media (max-width: 700px) {
-            .chat-grid { grid-template-columns: 1fr; }
+        .message.mine {
+            align-self: flex-end;
+            border-radius: 18px 18px 6px 18px;
+            background: var(--accent-grad);
+            border-color: transparent;
+            color: #fff;
+        }
+        .message small {
+            display: block;
+            margin-top: 3px;
+            font-size: 11px;
+            color: #8d98b8;
+            white-space: normal;
+        }
+        .message.mine small { color: rgba(255, 255, 255, 0.78); text-align: right; }
+
+        .thread-empty {
+            margin: auto;
+            text-align: center;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        @keyframes pop {
+            from { opacity: 0; transform: translateY(6px) scale(0.98); }
+            to { opacity: 1; transform: none; }
+        }
+
+        #message-form {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+            border-top: 1px solid var(--line);
+            background: rgba(20, 28, 54, 0.85);
+            border-radius: 0 0 20px 0;
+        }
+        #message-form.hidden { display: none !important; }
+        #message-content {
+            flex: 1;
+            min-width: 0;
+            min-height: 48px;
+            padding: 0 18px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: var(--bg-2);
+            font-size: 16px;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        #message-content::placeholder { color: #6d7899; }
+        #message-content:focus {
+            outline: none;
+            border-color: #8b7dff;
+            box-shadow: 0 0 0 3px rgba(139, 125, 255, 0.28);
+        }
+        .send-btn {
+            display: grid;
+            place-items: center;
+            width: 48px; height: 48px;
+            flex: none;
+            border: 0;
+            border-radius: 50%;
+            background: var(--accent-grad);
+            color: #fff;
+            cursor: pointer;
+            transition: transform 0.15s ease, filter 0.15s ease;
+        }
+        .send-btn:hover { filter: brightness(1.12); }
+        .send-btn:active { transform: scale(0.95); }
+        .send-btn svg { width: 21px; height: 21px; }
+
+        /* ---------- Scrollbars ---------- */
+        #messages, #conversations { scrollbar-width: thin; scrollbar-color: #2c3a6a transparent; }
+
+        /* ---------- Tablet ---------- */
+        @media (max-width: 1000px) {
+            #chat-panel { grid-template-columns: 290px minmax(0, 1fr); padding: 12px; }
+            .message { max-width: 82%; }
+        }
+
+        /* ---------- Mobile ---------- */
+        @media (max-width: 760px) {
+            #chat-panel {
+                grid-template-columns: 1fr;
+                padding: 0;
+            }
+            .sidebar, .chat-main {
+                border: 0;
+                border-radius: 0;
+                height: 100dvh;
+            }
+            .chat-main { display: none; box-shadow: none; }
+            #chat-panel.chat-open .sidebar { display: none; }
+            #chat-panel.chat-open .chat-main { display: flex; }
+            #back-button { display: inline-grid; }
+            .chat-head, #message-form { border-radius: 0; }
+            .message { max-width: 86%; }
+            #status { bottom: 84px; }
+            .auth-card { padding: 22px; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            * { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
         }
     </style>
 </head>
 <body>
-    <main>
-        <h1>ChatApp</h1>
-        <p class="subtitle">A simple real-time chat app built with Socket.IO.</p>
-        <p id="status">Create an account or log in to start chatting.</p>
+    <p id="status" role="status" aria-live="polite"></p>
 
-        <section id="auth-panel">
-            <form id="login-form" class="card">
-                <h2>Log in</h2>
-                <input id="login-email" type="email" placeholder="Email" required />
-                <input id="login-password" type="password" placeholder="Password" required />
-                <button type="submit">Log in</button>
-                <button type="button" id="show-register" class="secondary">
-                    Create a new account
-                </button>
+    <!-- ============ Logged-out view ============ -->
+    <section id="auth-panel">
+        <div class="auth-shell">
+            <header class="auth-hero">
+                <div class="brand">
+                    <span class="logo" aria-hidden="true">#</span>
+                    <span class="brand-name">ID<b>Chat</b></span>
+                </div>
+                <h1>Connect privately with a Chat ID.</h1>
+                <p>No contacts. No follower list. Just conversation.</p>
+            </header>
+
+            <form id="login-form" class="auth-card">
+                <h2>Welcome back</h2>
+                <p class="lead">Log in to see your conversations.</p>
+                <label class="field">
+                    <span>Email</span>
+                    <input id="login-email" type="email" placeholder="you@example.com" autocomplete="email" required />
+                </label>
+                <label class="field">
+                    <span>Password</span>
+                    <input id="login-password" type="password" placeholder="Your password" autocomplete="current-password" required />
+                </label>
+                <button type="submit" class="btn">Log in</button>
+                <p class="auth-switch">
+                    New here?
+                    <button type="button" id="show-register" class="btn-link">Create a new account</button>
+                </p>
             </form>
 
-            <form id="register-form" class="card hidden">
-                <h2>Create account</h2>
-                <input id="register-username" placeholder="Username" required />
-                <input id="register-email" type="email" placeholder="Email" required />
-                <input id="register-password" type="password" placeholder="Password (6+ characters)" required />
-                <button type="submit">Create account</button>
-                <button type="button" id="show-login" class="secondary">
-                    Back to log in
-                </button>
+            <form id="register-form" class="auth-card hidden">
+                <h2>Create your account</h2>
+                <p class="lead">You'll get a unique numeric Chat ID to share with people you want to talk to.</p>
+                <label class="field">
+                    <span>Username</span>
+                    <input id="register-username" placeholder="Choose a username" autocomplete="username" required />
+                </label>
+                <label class="field">
+                    <span>Email</span>
+                    <input id="register-email" type="email" placeholder="you@example.com" autocomplete="email" required />
+                </label>
+                <label class="field">
+                    <span>Password</span>
+                    <input id="register-password" type="password" placeholder="Password (6+ characters)" autocomplete="new-password" required />
+                </label>
+                <button type="submit" class="btn">Create account</button>
+                <p class="auth-switch">
+                    Already have an account?
+                    <button type="button" id="show-login" class="btn-link">Back to log in</button>
+                </p>
             </form>
-        </section>
 
-        <section id="chat-panel" class="hidden">
-            <div class="card top-row">
-                <strong id="current-user"></strong>
-                <button id="logout-button" class="secondary">Log out</button>
+            <div class="trust-row" aria-label="How IDChat works">
+                <span class="chip">Connect by Chat ID</span>
+                <span class="chip">No contact syncing</span>
+                <span class="chip">No profile discovery</span>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ Logged-in view ============ -->
+    <section id="chat-panel" class="hidden">
+        <aside class="sidebar" aria-label="Conversations">
+            <div class="side-head">
+                <div class="brand">
+                    <span class="logo" aria-hidden="true">#</span>
+                    <span class="brand-name">ID<b>Chat</b></span>
+                </div>
+                <span id="connection-status" class="conn" data-state="connecting">
+                    <i aria-hidden="true"></i>
+                    <span id="connection-label">Connecting</span>
+                </span>
             </div>
 
-            <div class="chat-grid">
-                <aside class="card">
-                    <h2>Conversations</h2>
-                    <form id="conversation-form">
-                        <input id="other-user-id" type="number" min="1" placeholder="Other user's ID" required />
-                        <button type="submit">Start conversation</button>
-                    </form>
-                    <div id="conversations"></div>
-                </aside>
+            <div class="profile">
+                <span id="current-avatar" class="avatar" aria-hidden="true">?</span>
+                <div class="profile-text">
+                    <strong id="current-user"></strong>
+                </div>
+            </div>
 
-                <section class="card">
+            <div class="new-chat">
+                <h2>Start a private chat</h2>
+                <form id="conversation-form">
+                    <label class="field">
+                        <span>Enter recipient's Chat ID</span>
+                        <input id="other-user-id" type="number" min="1" inputmode="numeric" placeholder="e.g. 1042" required />
+                    </label>
+                    <p class="help">Ask the person for their Chat ID to start a private conversation.</p>
+                    <button type="submit" class="btn">Start conversation</button>
+                </form>
+            </div>
+
+            <h2 class="list-title">Conversations</h2>
+            <div id="conversations"></div>
+
+            <div class="side-foot">
+                <button id="logout-button" type="button" class="btn btn-ghost">Log out</button>
+            </div>
+        </aside>
+
+        <section class="chat-main" aria-label="Chat">
+            <div class="chat-head">
+                <button id="back-button" type="button" class="icon-btn" aria-label="Back to conversations">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+                </button>
+                <div class="chat-head-text">
                     <h2 id="chat-title">Choose a conversation</h2>
-                    <div id="messages"></div>
-                    <form id="message-form" class="hidden">
-                        <input id="message-content" placeholder="Write a message" required />
-                        <button type="submit">Send</button>
-                    </form>
-                </section>
+                    <p id="chat-subtitle" class="chat-sub">Private chat by ID</p>
+                </div>
             </div>
+
+            <div id="chat-empty">
+                <div class="empty-card">
+                    <div class="empty-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>
+                    </div>
+                    <h3>Choose a conversation to view messages.</h3>
+                    <p>Or start a private chat with someone's Chat ID. Share your own Chat ID only with people you want to talk to.</p>
+                </div>
+            </div>
+
+            <div id="messages" class="hidden" aria-live="polite"></div>
+
+            <form id="message-form" class="hidden" autocomplete="off">
+                <label class="sr-only" for="message-content">Message</label>
+                <input id="message-content" placeholder="Write a message" required />
+                <button type="submit" class="send-btn" aria-label="Send message">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+                </button>
+            </form>
         </section>
-    </main>
+    </section>
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="./app.js"></script>
