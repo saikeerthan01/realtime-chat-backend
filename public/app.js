@@ -28,6 +28,72 @@ const backButton = document.getElementById("back-button");
 
 let statusTimer = null;
 let openingPersonId = null;
+let usersTimer = null;
+let lastUsersSignature = null;
+
+const USERS_REFRESH_MS = 5000;
+const mobileQuery = window.matchMedia("(max-width: 760px)");
+const chatAvatarElement = document.getElementById("chat-avatar");
+
+/* ---------- Live people list ---------- */
+
+function startUsersRefresh() {
+    stopUsersRefresh();
+
+    usersTimer = setInterval(() => {
+        if (state.token && !document.hidden) {
+            loadUsers(true);
+        }
+    }, USERS_REFRESH_MS);
+}
+
+function stopUsersRefresh() {
+    clearInterval(usersTimer);
+    usersTimer = null;
+    lastUsersSignature = null;
+}
+
+function refreshUsersNow() {
+    if (state.token && !document.hidden) {
+        loadUsers(true);
+    }
+}
+
+document.addEventListener("visibilitychange", refreshUsersNow);
+window.addEventListener("focus", refreshUsersNow);
+window.addEventListener("online", refreshUsersNow);
+
+/* ---------- Phone viewport (keeps the composer above the keyboard) ---------- */
+
+function syncViewportHeight() {
+    const viewport = window.visualViewport;
+    // While pinch-zoomed the visual viewport is smaller than the screen; ignore it then.
+    const zoomed = Boolean(viewport) && viewport.scale > 1.01;
+    const height = viewport && !zoomed ? viewport.height : window.innerHeight;
+    const top = viewport && !zoomed ? viewport.offsetTop : 0;
+
+    document.documentElement.style.setProperty(
+        "--app-height",
+        `${Math.round(height)}px`
+    );
+    document.documentElement.style.setProperty(
+        "--app-top",
+        `${Math.round(top)}px`
+    );
+
+    if (mobileQuery.matches && state.activeConversationId !== null) {
+        messagesElement.scrollTop = messagesElement.scrollHeight;
+    }
+}
+
+window.addEventListener("resize", syncViewportHeight);
+
+if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", syncViewportHeight);
+    window.visualViewport.addEventListener("scroll", syncViewportHeight);
+}
+
+syncViewportHeight();
 
 /* ---------- UI helpers ---------- */
 
@@ -59,6 +125,7 @@ function updateChatView() {
     messagesElement.classList.toggle("hidden", !hasActive);
     messageForm.classList.toggle("hidden", !hasActive);
     chatPanel.classList.toggle("chat-open", hasActive);
+    chatAvatarElement.classList.toggle("hidden", !hasActive);
 
     if (!hasActive) {
         chatTitleElement.textContent = "Choose a conversation";
@@ -115,8 +182,7 @@ async function apiRequest(path, options = {}) {
                 data.message === "Invalid or expired token");
 
         if (state.token && tokenRejected) {
-            clearSession();
-            showLoggedOut();
+            handleSessionExpired();
             throw new Error("Your session expired. Please log in again.");
         }
 
@@ -148,6 +214,8 @@ function clearSession() {
     localStorage.removeItem("chat_token");
     localStorage.removeItem("chat_user");
 
+    stopUsersRefresh();
+
     if (state.socket) {
         state.socket.disconnect();
         state.socket = null;
@@ -165,6 +233,16 @@ function showLoggedOut() {
     updateChatView();
 }
 
+function handleSessionExpired() {
+    if (!state.token) {
+        return;
+    }
+
+    clearSession();
+    showLoggedOut();
+    showStatus("Your session expired. Please log in again.", "error");
+}
+
 function showLoggedIn() {
     authPanel.classList.add("hidden");
     chatPanel.classList.remove("hidden");
@@ -173,6 +251,7 @@ function showLoggedIn() {
     updateChatView();
     connectSocket();
     loadUsers();
+    startUsersRefresh();
 }
 
 /* ---------- Socket ---------- */
@@ -193,6 +272,7 @@ function connectSocket() {
     state.socket.on("connect", () => {
         setConnectionState("connected");
         showStatus("Connected to real-time chat.", "success");
+        refreshUsersNow();
 
         // After a reconnect, rejoin the open conversation's room.
         if (state.activeConversationId !== null) {
@@ -206,6 +286,13 @@ function connectSocket() {
 
     state.socket.on("connect_error", (error) => {
         setConnectionState("offline");
+
+        // The server rejects a bad or expired token during the socket handshake.
+        if (String(error.message).startsWith("Authentication error")) {
+            handleSessionExpired();
+            return;
+        }
+
         showStatus(`Socket connection error: ${error.message}`, "error");
     });
 
@@ -323,7 +410,7 @@ function renderUsers() {
 
         const sub = document.createElement("span");
         sub.className = "person-sub";
-        sub.textContent = "Tap to message";
+        sub.textContent = "Send a message";
 
         text.append(name, sub);
         button.append(avatar, text);
@@ -338,19 +425,42 @@ function renderUsers() {
 
 /* ---------- Data loading ---------- */
 
-async function loadUsers() {
+async function loadUsers(quiet = false) {
     try {
         const data = await apiRequest("/api/users");
+
+        // A background refresh can finish after the person logged out.
+        if (!state.token) {
+            return;
+        }
+
         const list = Array.isArray(data.users) ? data.users : [];
 
-        state.users = list
+        const users = list
             .filter((person) => Number(person.id) !== Number(state.user.id))
             .map((person) => ({ id: Number(person.id), username: person.username }));
 
-        state.usersById = new Map(state.users.map((person) => [person.id, person]));
+        const signature = JSON.stringify(
+            users.map((person) => [person.id, person.username])
+        );
+
+        // Nothing new: leave the list alone so it doesn't flicker or lose its scroll position.
+        if (quiet && signature === lastUsersSignature) {
+            return;
+        }
+
+        lastUsersSignature = signature;
+        state.users = users;
+        state.usersById = new Map(users.map((person) => [person.id, person]));
 
         renderUsers();
     } catch (error) {
+        // Background refreshes fail quietly; the next one tries again.
+        if (quiet) {
+            return;
+        }
+
+        lastUsersSignature = null;
         usersListElement.replaceChildren();
 
         const empty = document.createElement("div");
@@ -405,9 +515,15 @@ async function openConversation(conversationId, person) {
         ? person.username
         : `Conversation ${conversationId}`;
     chatSubtitleElement.textContent = "Private conversation";
+    chatAvatarElement.textContent = String(chatTitleElement.textContent || "?").charAt(0);
     messagesElement.replaceChildren();
 
     updateChatView();
+
+    // On phones, give the browser's Back button something to close.
+    if (mobileQuery.matches && !(history.state && history.state.chatOpen)) {
+        history.pushState({ chatOpen: true }, "");
+    }
 
     if (!data.messages.length) {
         const empty = document.createElement("p");
@@ -422,7 +538,10 @@ async function openConversation(conversationId, person) {
 
     state.socket.emit("join_conversation", state.activeConversationId);
 
-    document.getElementById("message-content").focus({ preventScroll: true });
+    // On phones, focusing here would pop the keyboard up over the conversation.
+    if (!mobileQuery.matches) {
+        document.getElementById("message-content").focus({ preventScroll: true });
+    }
 }
 
 /* ---------- Events ---------- */
@@ -491,6 +610,12 @@ messageForm.addEventListener("submit", (event) => {
         return;
     }
 
+    // Keep the typed text so nothing is lost while the connection is down.
+    if (!state.socket || !state.socket.connected) {
+        showStatus("You're offline. Wait for the connection to return, then send again.", "error");
+        return;
+    }
+
     state.socket.emit("send_message", {
         conversationId: state.activeConversationId,
         content,
@@ -499,12 +624,28 @@ messageForm.addEventListener("submit", (event) => {
     contentElement.value = "";
 });
 
-backButton.addEventListener("click", () => {
+function closeChat() {
     state.activeConversationId = null;
     state.activePersonId = null;
     messagesElement.replaceChildren();
     updateChatView();
     renderUsers();
+}
+
+backButton.addEventListener("click", () => {
+    // If opening this chat added a history entry (phones), go back through it
+    // so our arrow and the browser's Back button behave the same way.
+    if (history.state && history.state.chatOpen) {
+        history.back();
+    } else {
+        closeChat();
+    }
+});
+
+window.addEventListener("popstate", () => {
+    if (state.activeConversationId !== null) {
+        closeChat();
+    }
 });
 
 document.getElementById("logout-button").addEventListener("click", () => {
