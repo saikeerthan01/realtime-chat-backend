@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f2f2f3" />
-    <title>IDChat · Private chat by ID</title>
+    <title>IDChat · Private messages</title>
     <style>
         :root {
             --bg: #f2f2f3;
@@ -537,6 +537,57 @@
         .send-btn:active { transform: scale(0.95); }
         .send-btn svg { width: 21px; height: 21px; }
 
+
+        /* ---------- People list ---------- */
+        .people-head { display: flex; align-items: baseline; justify-content: space-between; padding-right: 18px; }
+        .people-count { font-size: 12px; color: var(--muted); }
+        .search-wrap { padding: 0 18px 8px; }
+        .search-wrap input {
+            width: 100%;
+            min-height: 42px;
+            padding: 0 14px;
+            border: 1px solid var(--line);
+            border-radius: 999px;
+            background: #fff;
+            font-size: 16px;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        .search-wrap input::placeholder { color: #9a9aa2; }
+        .search-wrap input:focus {
+            outline: none;
+            border-color: var(--ink);
+            box-shadow: 0 0 0 3px rgba(20, 20, 22, 0.12);
+        }
+        .people-list {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 0 10px 12px;
+            scrollbar-width: thin;
+            scrollbar-color: #c4c4ca transparent;
+        }
+        .person {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            width: 100%;
+            min-height: 60px;
+            margin-top: 4px;
+            padding: 8px 10px;
+            border: 1px solid transparent;
+            border-radius: 12px;
+            background: transparent;
+            text-align: left;
+            cursor: pointer;
+            transition: background 0.15s ease, border-color 0.15s ease;
+        }
+        .person:hover { background: var(--surface-2); }
+        .person.active { background: #fff; border-color: #b9b9c0; box-shadow: 0 2px 8px rgba(20, 20, 22, 0.06); }
+        .person[disabled] { opacity: 0.6; cursor: progress; }
+        .person-name { display: block; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .person-sub { display: block; font-size: 12.5px; color: var(--muted); }
+        .person-text { min-width: 0; }
+
         /* ---------- Scrollbars ---------- */
         #messages, #conversations { scrollbar-width: thin; scrollbar-color: #c4c4ca transparent; }
 
@@ -583,8 +634,8 @@
                     <span class="logo" aria-hidden="true">#</span>
                     <span class="brand-name">ID<b>Chat</b></span>
                 </div>
-                <h1>Connect privately with a Chat ID.</h1>
-                <p>No contacts. No follower list. Just conversation.</p>
+                <h1>Pick someone. Start talking.</h1>
+                <p>Log in, see who's here, and message them directly.</p>
             </header>
 
             <form id="login-form" class="auth-card">
@@ -607,7 +658,7 @@
 
             <form id="register-form" class="auth-card hidden">
                 <h2>Create your account</h2>
-                <p class="lead">You'll get a unique numeric Chat ID to share with people you want to talk to.</p>
+                <p class="lead">Choose a username and you'll appear in everyone's people list.</p>
                 <label class="field">
                     <span>Username</span>
                     <input id="register-username" placeholder="Choose a username" autocomplete="username" required />
@@ -628,16 +679,16 @@
             </form>
 
             <div class="trust-row" aria-label="How IDChat works">
-                <span class="chip">Connect by Chat ID</span>
-                <span class="chip">No contact syncing</span>
-                <span class="chip">No profile discovery</span>
+                <span class="chip">Open the people list</span>
+                <span class="chip">Tap a name to chat</span>
+                <span class="chip">No IDs to share</span>
             </div>
         </div>
     </section>
 
     <!-- ============ Logged-in view ============ -->
     <section id="chat-panel" class="hidden">
-        <aside class="sidebar" aria-label="Conversations">
+        <aside class="sidebar" aria-label="People">
             <div class="side-head">
                 <div class="brand">
                     <span class="logo" aria-hidden="true">#</span>
@@ -656,20 +707,15 @@
                 </div>
             </div>
 
-            <div class="new-chat">
-                <h2>Start a private chat</h2>
-                <form id="conversation-form">
-                    <label class="field">
-                        <span>Enter recipient's Chat ID</span>
-                        <input id="other-user-id" type="number" min="1" inputmode="numeric" placeholder="e.g. 1042" required />
-                    </label>
-                    <p class="help">Ask the person for their Chat ID to start a private conversation.</p>
-                    <button type="submit" class="btn">Start conversation</button>
-                </form>
+            <div class="people-head">
+                <h2 class="list-title">People</h2>
+                <span id="people-count" class="people-count"></span>
             </div>
-
-            <h2 class="list-title">Conversations</h2>
-            <div id="conversations"></div>
+            <div class="search-wrap">
+                <label class="sr-only" for="user-search">Search people</label>
+                <input id="user-search" type="search" placeholder="Search by username" autocomplete="off" />
+            </div>
+            <div id="users-list" class="people-list"></div>
 
             <div class="side-foot">
                 <button id="logout-button" type="button" class="btn btn-ghost">Log out</button>
@@ -693,7 +739,7 @@
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>
                     </div>
                     <h3>Choose a conversation to view messages.</h3>
-                    <p>Or start a private chat with someone's Chat ID. Share your own Chat ID only with people you want to talk to.</p>
+                    <p>Pick someone from the people list to open a private conversation.</p>
                 </div>
             </div>
 

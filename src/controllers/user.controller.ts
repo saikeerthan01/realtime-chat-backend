@@ -60,7 +60,7 @@ export const getUserById = async (req: Request, res: Response) => {
 
         const result = await pool.query(
             `
-            SELECT id, username, email, created_at
+            SELECT id, username, created_at
             FROM users
             WHERE id = $1
             `,
@@ -79,6 +79,32 @@ export const getUserById = async (req: Request, res: Response) => {
 
         res.status(500).json({
             message: "Failed to fetch user",
+        });
+    }
+};
+
+export const getUsers = async (req: Request, res: Response) => {
+    try {
+        const currentUser = (req as any).user;
+
+        const result = await pool.query(
+            `
+            SELECT id, username
+            FROM users
+            WHERE id <> $1
+            ORDER BY LOWER(username) ASC, id ASC
+            `,
+            [currentUser.userId]
+        );
+
+        res.status(200).json({
+            users: result.rows,
+        });
+    } catch (error) {
+        console.error(error);
+
+        res.status(500).json({
+            message: "Failed to fetch users",
         });
     }
 };

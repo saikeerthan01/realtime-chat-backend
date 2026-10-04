@@ -3,6 +3,10 @@ const state = {
     user: JSON.parse(localStorage.getItem("chat_user") || "null"),
     socket: null,
     activeConversationId: null,
+    activePersonId: null,
+    users: [],
+    usersById: new Map(),
+    search: "",
 };
 
 const statusElement = document.getElementById("status");
@@ -10,7 +14,9 @@ const authPanel = document.getElementById("auth-panel");
 const chatPanel = document.getElementById("chat-panel");
 const currentUserElement = document.getElementById("current-user");
 const currentAvatarElement = document.getElementById("current-avatar");
-const conversationsElement = document.getElementById("conversations");
+const usersListElement = document.getElementById("users-list");
+const peopleCountElement = document.getElementById("people-count");
+const userSearchElement = document.getElementById("user-search");
 const messagesElement = document.getElementById("messages");
 const chatTitleElement = document.getElementById("chat-title");
 const chatSubtitleElement = document.getElementById("chat-subtitle");
@@ -21,38 +27,7 @@ const connectionLabelElement = document.getElementById("connection-label");
 const backButton = document.getElementById("back-button");
 
 let statusTimer = null;
-let conversationsTimer = null;
-let lastConversationsSignature = null;
-
-const CONVERSATION_REFRESH_MS = 4000;
-
-function startConversationRefresh() {
-    stopConversationRefresh();
-
-    conversationsTimer = setInterval(() => {
-        if (state.token && !document.hidden) {
-            loadConversations(true);
-        }
-    }, CONVERSATION_REFRESH_MS);
-}
-
-function stopConversationRefresh() {
-    clearInterval(conversationsTimer);
-    conversationsTimer = null;
-    lastConversationsSignature = null;
-}
-
-document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && state.token) {
-        loadConversations(true);
-    }
-});
-
-window.addEventListener("focus", () => {
-    if (state.token) {
-        loadConversations(true);
-    }
-});
+let openingPersonId = null;
 
 /* ---------- UI helpers ---------- */
 
@@ -87,32 +62,7 @@ function updateChatView() {
 
     if (!hasActive) {
         chatTitleElement.textContent = "Choose a conversation";
-        chatSubtitleElement.textContent = "Private chat by ID";
-    }
-}
-
-async function copyText(text) {
-    try {
-        await navigator.clipboard.writeText(text);
-        return true;
-    } catch (error) {
-        const helper = document.createElement("textarea");
-        helper.value = text;
-        helper.setAttribute("readonly", "");
-        helper.style.position = "fixed";
-        helper.style.opacity = "0";
-        document.body.append(helper);
-        helper.select();
-
-        let copied = false;
-        try {
-            copied = document.execCommand("copy");
-        } catch (copyError) {
-            copied = false;
-        }
-
-        helper.remove();
-        return copied;
+        chatSubtitleElement.textContent = "Pick someone from the people list";
     }
 }
 
@@ -123,41 +73,11 @@ function renderCurrentUser() {
     name.className = "profile-name";
     name.textContent = state.user.username;
 
-    const row = document.createElement("span");
-    row.className = "chat-id-row";
+    const hint = document.createElement("span");
+    hint.className = "chat-id-label";
+    hint.textContent = "Signed in";
 
-    const label = document.createElement("span");
-    label.className = "chat-id-label";
-    label.append("Your Chat ID: ");
-
-    const idValue = document.createElement("b");
-    idValue.textContent = state.user.id;
-    label.append(idValue);
-
-    const copyButton = document.createElement("button");
-    copyButton.type = "button";
-    copyButton.className = "copy-btn";
-    copyButton.title = "Copy your Chat ID";
-    copyButton.setAttribute("aria-label", "Copy your Chat ID");
-    copyButton.innerHTML =
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
-        'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-        '<rect x="9" y="9" width="11" height="11" rx="2"/>' +
-        '<path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg>';
-
-    copyButton.addEventListener("click", async () => {
-        const copied = await copyText(String(state.user.id));
-
-        if (copied) {
-            showStatus("Your Chat ID was copied.", "success");
-        } else {
-            showStatus("Could not copy. Your Chat ID is " + state.user.id + ".", "error");
-        }
-    });
-
-    row.append(label, copyButton);
-    currentUserElement.append(name, row);
-
+    currentUserElement.append(name, hint);
     currentAvatarElement.textContent = String(state.user.username || "?").charAt(0);
 }
 
@@ -178,9 +98,28 @@ async function apiRequest(path, options = {}) {
         headers,
     });
 
-    const data = await response.json();
+    let data = {};
+    try {
+        data = await response.json();
+    } catch (error) {
+        data = {};
+    }
 
     if (!response.ok) {
+        // The server returns 401 (no token) or 403 "Invalid or expired token".
+        // Tokens last 1 hour, so send the person back to log in instead of
+        // leaving them on a screen where every request fails.
+        const tokenRejected =
+            response.status === 401 ||
+            (response.status === 403 &&
+                data.message === "Invalid or expired token");
+
+        if (state.token && tokenRejected) {
+            clearSession();
+            showLoggedOut();
+            throw new Error("Your session expired. Please log in again.");
+        }
+
         throw new Error(data.message || "Something went wrong");
     }
 
@@ -201,11 +140,13 @@ function clearSession() {
     state.token = null;
     state.user = null;
     state.activeConversationId = null;
+    state.activePersonId = null;
+    state.users = [];
+    state.usersById = new Map();
+    state.search = "";
 
     localStorage.removeItem("chat_token");
     localStorage.removeItem("chat_user");
-
-    stopConversationRefresh();
 
     if (state.socket) {
         state.socket.disconnect();
@@ -217,8 +158,10 @@ function showLoggedOut() {
     authPanel.classList.remove("hidden");
     chatPanel.classList.add("hidden");
     currentUserElement.replaceChildren();
-    conversationsElement.replaceChildren();
+    usersListElement.replaceChildren();
     messagesElement.replaceChildren();
+    userSearchElement.value = "";
+    peopleCountElement.textContent = "";
     updateChatView();
 }
 
@@ -229,8 +172,7 @@ function showLoggedIn() {
     renderCurrentUser();
     updateChatView();
     connectSocket();
-    loadConversations();
-    startConversationRefresh();
+    loadUsers();
 }
 
 /* ---------- Socket ---------- */
@@ -251,7 +193,11 @@ function connectSocket() {
     state.socket.on("connect", () => {
         setConnectionState("connected");
         showStatus("Connected to real-time chat.", "success");
-        loadConversations(true);
+
+        // After a reconnect, rejoin the open conversation's room.
+        if (state.activeConversationId !== null) {
+            state.socket.emit("join_conversation", state.activeConversationId);
+        }
     });
 
     state.socket.on("disconnect", () => {
@@ -279,6 +225,11 @@ function connectSocket() {
 }
 
 /* ---------- Rendering ---------- */
+
+function personName(userId) {
+    const person = state.usersById.get(Number(userId));
+    return person ? person.username : `User ${userId}`;
+}
 
 function renderMessage(message) {
     const placeholder = messagesElement.querySelector(".thread-empty");
@@ -309,131 +260,177 @@ function renderMessage(message) {
 
     details.textContent = isMine
         ? `You · ${sentAt}`
-        : `User ${message.sender_id} · ${sentAt}`;
+        : `${personName(message.sender_id)} · ${sentAt}`;
 
     item.append(content, details);
     messagesElement.append(item);
     messagesElement.scrollTop = messagesElement.scrollHeight;
 }
 
-function renderConversations(conversations) {
-    conversationsElement.replaceChildren();
+function renderUsers() {
+    usersListElement.replaceChildren();
 
-    if (!conversations.length) {
+    const query = state.search.trim().toLowerCase();
+    const visible = state.users.filter((person) =>
+        String(person.username).toLowerCase().includes(query)
+    );
+
+    peopleCountElement.textContent = state.users.length
+        ? `${state.users.length} registered`
+        : "";
+
+    if (!visible.length) {
         const empty = document.createElement("div");
         empty.className = "list-empty";
 
         const title = document.createElement("strong");
-        title.textContent = "No conversations yet";
+        title.textContent = state.users.length
+            ? "No matching people"
+            : "No other users yet";
 
-        empty.append(title, "Start a private chat with someone's Chat ID.");
-        conversationsElement.append(empty);
+        empty.append(
+            title,
+            state.users.length
+                ? "Try a different name."
+                : "When someone else registers, they will show up here."
+        );
+        usersListElement.append(empty);
         return;
     }
 
-    conversations.forEach((conversation) => {
+    visible.forEach((person) => {
         const button = document.createElement("button");
         button.type = "button";
-        button.className = "convo";
+        button.className = "person";
+        button.disabled = openingPersonId === person.id;
 
-        const avatar = document.createElement("span");
-        avatar.className = "avatar soft";
-        avatar.setAttribute("aria-hidden", "true");
-        avatar.textContent = "#";
-
-        const text = document.createElement("span");
-
-        const title = document.createElement("span");
-        title.className = "convo-title";
-        title.textContent = `Conversation ${conversation.id}`;
-
-        const sub = document.createElement("span");
-        sub.className = "convo-sub";
-        sub.textContent = "Private chat";
-
-        text.append(title, sub);
-        button.append(avatar, text);
-
-        if (conversation.id === state.activeConversationId) {
+        if (person.id === state.activePersonId) {
             button.classList.add("active");
             button.setAttribute("aria-current", "true");
         }
 
+        const avatar = document.createElement("span");
+        avatar.className = "avatar soft";
+        avatar.setAttribute("aria-hidden", "true");
+        avatar.textContent = String(person.username || "?").charAt(0);
+
+        const text = document.createElement("span");
+        text.className = "person-text";
+
+        const name = document.createElement("span");
+        name.className = "person-name";
+        name.textContent = person.username;
+
+        const sub = document.createElement("span");
+        sub.className = "person-sub";
+        sub.textContent = "Tap to message";
+
+        text.append(name, sub);
+        button.append(avatar, text);
+
         button.addEventListener("click", () => {
-            openConversation(conversation.id);
+            startChatWith(person);
         });
 
-        conversationsElement.append(button);
+        usersListElement.append(button);
     });
 }
 
 /* ---------- Data loading ---------- */
 
-async function loadConversations(quiet = false) {
+async function loadUsers() {
     try {
-        const data = await apiRequest("/api/conversations");
+        const data = await apiRequest("/api/users");
+        const list = Array.isArray(data.users) ? data.users : [];
 
-        // A background refresh may finish after the user logged out.
-        if (!state.token) {
-            return;
-        }
+        state.users = list
+            .filter((person) => Number(person.id) !== Number(state.user.id))
+            .map((person) => ({ id: Number(person.id), username: person.username }));
 
-        const signature = JSON.stringify([
-            data.conversations.map((conversation) => conversation.id),
-            state.activeConversationId,
-        ]);
+        state.usersById = new Map(state.users.map((person) => [person.id, person]));
 
-        // Skip re-rendering when nothing changed, so the list doesn't flicker.
-        if (quiet && signature === lastConversationsSignature) {
-            return;
-        }
-
-        lastConversationsSignature = signature;
-        renderConversations(data.conversations);
+        renderUsers();
     } catch (error) {
-        if (!quiet) {
-            showStatus(error.message, "error");
-        }
-    }
-}
+        usersListElement.replaceChildren();
 
-async function openConversation(conversationId) {
-    try {
-        const data = await apiRequest(
-            `/api/conversations/${conversationId}/messages`
-        );
+        const empty = document.createElement("div");
+        empty.className = "list-empty";
 
-        state.activeConversationId = Number(conversationId);
-        chatTitleElement.textContent = `Conversation ${conversationId}`;
-        chatSubtitleElement.textContent = "Private chat by ID";
-        messagesElement.replaceChildren();
+        const title = document.createElement("strong");
+        title.textContent = "Couldn't load people";
 
-        updateChatView();
+        empty.append(title, error.message);
+        usersListElement.append(empty);
 
-        if (!data.messages.length) {
-            const empty = document.createElement("p");
-            empty.className = "thread-empty";
-            empty.textContent = "No messages yet. Say hello!";
-            messagesElement.append(empty);
-        }
-
-        data.messages.forEach(renderMessage);
-
-        renderConversations(
-            (await apiRequest("/api/conversations")).conversations
-        );
-
-        state.socket.emit("join_conversation", state.activeConversationId);
-
-        showStatus(`Joined conversation ${conversationId}.`, "success");
-
-        document.getElementById("message-content").focus({ preventScroll: true });
-    } catch (error) {
         showStatus(error.message, "error");
     }
 }
 
+async function startChatWith(person) {
+    if (openingPersonId !== null) {
+        return;
+    }
+
+    openingPersonId = person.id;
+    renderUsers();
+
+    try {
+        // Same endpoint and body the app already used; the id now comes
+        // from the person you tapped instead of a typed number.
+        const result = await apiRequest("/api/conversations", {
+            method: "POST",
+            body: JSON.stringify({
+                userId: person.id,
+            }),
+        });
+
+        await openConversation(result.conversation.id, person);
+    } catch (error) {
+        showStatus(error.message, "error");
+    } finally {
+        openingPersonId = null;
+        renderUsers();
+    }
+}
+
+async function openConversation(conversationId, person) {
+    const data = await apiRequest(
+        `/api/conversations/${conversationId}/messages`
+    );
+
+    state.activeConversationId = Number(conversationId);
+    state.activePersonId = person ? person.id : null;
+
+    chatTitleElement.textContent = person
+        ? person.username
+        : `Conversation ${conversationId}`;
+    chatSubtitleElement.textContent = "Private conversation";
+    messagesElement.replaceChildren();
+
+    updateChatView();
+
+    if (!data.messages.length) {
+        const empty = document.createElement("p");
+        empty.className = "thread-empty";
+        empty.textContent = person
+            ? `No messages yet. Say hello to ${person.username}!`
+            : "No messages yet. Say hello!";
+        messagesElement.append(empty);
+    }
+
+    data.messages.forEach(renderMessage);
+
+    state.socket.emit("join_conversation", state.activeConversationId);
+
+    document.getElementById("message-content").focus({ preventScroll: true });
+}
+
 /* ---------- Events ---------- */
+
+userSearchElement.addEventListener("input", () => {
+    state.search = userSearchElement.value;
+    renderUsers();
+});
 
 document
     .getElementById("register-form")
@@ -441,7 +438,7 @@ document
         event.preventDefault();
 
         try {
-            const user = await apiRequest("/api/users", {
+            await apiRequest("/api/users", {
                 method: "POST",
                 body: JSON.stringify({
                     username: document.getElementById("register-username").value,
@@ -450,10 +447,7 @@ document
                 }),
             });
 
-            showStatus(
-                `Account created. Your Chat ID is ${user.user.id}. You can now log in.`,
-                "success"
-            );
+            showStatus("Account created. You can now log in.", "success");
 
             event.target.reset();
 
@@ -487,33 +481,6 @@ document
         }
     });
 
-document
-    .getElementById("conversation-form")
-    .addEventListener("submit", async (event) => {
-        event.preventDefault();
-
-        try {
-            const otherUserId = Number(
-                document.getElementById("other-user-id").value
-            );
-
-            const result = await apiRequest("/api/conversations", {
-                method: "POST",
-                body: JSON.stringify({
-                    userId: otherUserId,
-                }),
-            });
-
-            event.target.reset();
-            await loadConversations();
-            await openConversation(result.conversation.id);
-
-            showStatus("Conversation created.", "success");
-        } catch (error) {
-            showStatus(error.message, "error");
-        }
-    });
-
 messageForm.addEventListener("submit", (event) => {
     event.preventDefault();
 
@@ -534,9 +501,10 @@ messageForm.addEventListener("submit", (event) => {
 
 backButton.addEventListener("click", () => {
     state.activeConversationId = null;
+    state.activePersonId = null;
     messagesElement.replaceChildren();
     updateChatView();
-    loadConversations();
+    renderUsers();
 });
 
 document.getElementById("logout-button").addEventListener("click", () => {
